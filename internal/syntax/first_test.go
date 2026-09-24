@@ -20,11 +20,11 @@ func TestCodeunitHello(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if bytes.Contains(data, []byte{'\r'}) {
+		t.Fatal("line endings must be LF (got CR); check out with .gitattributes eol=lf, or git config core.autocrlf=false")
+	}
 	if len(data) != 252 {
 		t.Fatalf("file is %d bytes, want 252", len(data))
-	}
-	if bytes.Contains(data, []byte{'\r'}) {
-		t.Fatal("line endings must be LF")
 	}
 	if bytes.HasPrefix(data, []byte{0xEF, 0xBB, 0xBF}) {
 		t.Fatal("file must not start with a BOM")

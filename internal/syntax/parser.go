@@ -330,7 +330,7 @@ func (p *parser) parseStmt() Node {
 func (p *parser) parseExpr() Node { return p.parseBinary(1) }
 
 func (p *parser) parseBinary(minPrec int) Node {
-	left := p.parsePrimary()
+	left := p.parseUnary()
 	for {
 		prec, ok := binaryPrec(p.peek())
 		if !ok || prec < minPrec {
@@ -362,6 +362,28 @@ func binaryPrec(tok Token) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func (p *parser) parseUnary() Node {
+	tok := p.peek()
+	var opKind UnaryOp
+	switch {
+	case tok.Text == "-":
+		opKind = UnaryMinus
+	case tok.Text == "+":
+		opKind = UnaryPlus
+	case strings.EqualFold(tok.Text, "NOT") && (tok.Kind == TokKeyword || tok.Kind == TokIdentifier):
+		opKind = UnaryNot
+	default:
+		return p.parsePrimary()
+	}
+	op := p.advance()
+	operand := p.parseUnary()
+	u := &UnaryExpr{OpKind: opKind, Op: op.Index, X: operand}
+	u.kind = KindUnary
+	u.first = op.Index
+	u.last = lastTok(operand)
+	return u
 }
 
 func (p *parser) parsePrimary() Node {

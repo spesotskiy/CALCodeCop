@@ -269,9 +269,9 @@ func TestCodeunitHello(t *testing.T) {
 		t.Fatalf("unexpected nodes: %s", strings.Join(forbidden, ", "))
 	}
 
-	findings := rules.Run(tree, []rules.Rule{rules.NewRule001()})
+	findings := rules.Run(tree, []rules.Rule{rules.NewRule001(), rules.NewRule002()})
 	if len(findings) != 0 {
-		t.Fatalf("Rule 001 findings = %d, want 0: %+v", len(findings), findings)
+		t.Fatalf("Rule findings = %d, want 0: %+v", len(findings), findings)
 	}
 }
 
@@ -372,6 +372,134 @@ func TestRule001BadSamples(t *testing.T) {
 	}
 	if total != 18 {
 		t.Fatalf("total findings %d, want 18", total)
+	}
+}
+
+func TestRule002BadSamples(t *testing.T) {
+	hello, err := os.ReadFile("testdata/codeunit-hello.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		file    string
+		count   int
+		spans   []string
+		message string
+	}{
+		{"unary-minus-space.txt", 1, []string{"-"}, "Unexpected space between unary '-' and its operand."},
+		{"unary-minus-paren-space.txt", 1, []string{"-"}, "Unexpected space between unary '-' and its operand."},
+		{"unary-plus-space.txt", 1, []string{"+"}, "Unexpected space between unary '+' and its operand."},
+	}
+	for _, tc := range cases {
+		t.Run(tc.file, func(t *testing.T) {
+			path := "testdata/rule002/" + tc.file
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.HasPrefix(data, hello[:bytes.Index(hello, []byte("MESSAGE"))]) {
+				t.Fatal("sample is not a copy of the codeunit")
+			}
+			if bytes.Contains(data, []byte("MESSAGE('Hello!');")) {
+				t.Fatal("sample still contains the hello call")
+			}
+			tree := syntax.Parse(string(data), "internal/syntax/"+path, syntax.ParseOptions{})
+			if len(tree.Diagnostics) != 0 {
+				t.Fatalf("diagnostics = %+v", tree.Diagnostics)
+			}
+			findings := rules.Run(tree, []rules.Rule{rules.NewRule002()})
+			if len(findings) != tc.count {
+				t.Fatalf("findings = %d, want %d: %+v", len(findings), tc.count, findings)
+			}
+			for i, f := range findings {
+				if f.RuleID != "002" {
+					t.Fatalf("rule id %q", f.RuleID)
+				}
+				if f.Severity != rules.SeverityError {
+					t.Fatalf("severity %d", f.Severity)
+				}
+				if len(f.Related) != 0 {
+					t.Fatalf("related spans %+v", f.Related)
+				}
+				text := spanText(string(data), f.Span)
+				if text != tc.spans[i] {
+					t.Fatalf("span text %q, want %q", text, tc.spans[i])
+				}
+				if f.Message != tc.message {
+					t.Fatalf("message %q, want %q", f.Message, tc.message)
+				}
+			}
+		})
+	}
+}
+
+func TestRule002OkSamples(t *testing.T) {
+	hello, err := os.ReadFile("testdata/codeunit-hello.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := []string{
+		"unary-minus-ok.txt",
+		"unary-minus-paren-ok.txt",
+		"unary-plus-ok.txt",
+		"binary-minus-not-002.txt",
+		"not-keyword-ignored.txt",
+		"not-paren-ignored.txt",
+		"compare-unary-ok.txt",
+	}
+	for _, name := range files {
+		t.Run(name, func(t *testing.T) {
+			path := "testdata/rule002/" + name
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.HasPrefix(data, hello[:bytes.Index(hello, []byte("MESSAGE"))]) {
+				t.Fatal("sample is not a copy of the codeunit")
+			}
+			if bytes.Contains(data, []byte("MESSAGE('Hello!');")) {
+				t.Fatal("sample still contains the hello call")
+			}
+			tree := syntax.Parse(string(data), "internal/syntax/"+path, syntax.ParseOptions{})
+			if len(tree.Diagnostics) != 0 {
+				t.Fatalf("diagnostics = %+v", tree.Diagnostics)
+			}
+			findings := rules.Run(tree, []rules.Rule{rules.NewRule002()})
+			if len(findings) != 0 {
+				t.Fatalf("findings = %d, want 0: %+v", len(findings), findings)
+			}
+		})
+	}
+}
+
+func TestUnaryParse(t *testing.T) {
+	data, err := os.ReadFile("testdata/rule002/unary-minus-ok.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree := syntax.Parse(string(data), "internal/syntax/testdata/rule002/unary-minus-ok.txt", syntax.ParseOptions{})
+	if len(tree.Diagnostics) != 0 {
+		t.Fatalf("diagnostics = %+v", tree.Diagnostics)
+	}
+	onRun := mustProp(t, tree.Objects[0].Properties, "OnRun")
+	cv := onRun.Value.(*syntax.CodeValue)
+	as, ok := cv.Body.Statements[0].(*syntax.AssignStmt)
+	if !ok {
+		t.Fatalf("statement %T", cv.Body.Statements[0])
+	}
+	u, ok := as.Right.(*syntax.UnaryExpr)
+	if !ok {
+		t.Fatalf("right %T", as.Right)
+	}
+	if u.OpKind != syntax.UnaryMinus {
+		t.Fatalf("op kind %d", u.OpKind)
+	}
+	id, ok := u.X.(*syntax.Identifier)
+	if !ok || id.Text != "Amount" {
+		t.Fatalf("operand %+v", u.X)
+	}
+	if tree.Tokens[u.Op].Text != "-" {
+		t.Fatalf("op token %q", tree.Tokens[u.Op].Text)
 	}
 }
 

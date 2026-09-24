@@ -18,6 +18,8 @@ const (
 	KindBlock
 	KindCodeSection
 	KindCall
+	KindIndex
+	KindOptionAccess
 	KindIdentifier
 	KindBinary
 	KindUnary
@@ -55,6 +57,10 @@ func (k Kind) String() string {
 		return "CodeSection"
 	case KindCall:
 		return "Call"
+	case KindIndex:
+		return "Index"
+	case KindOptionAccess:
+		return "OptionAccess"
 	case KindIdentifier:
 		return "Identifier"
 	case KindBinary:
@@ -327,6 +333,57 @@ func (c *CallExpr) CommaTok(afterArg int) (Token, bool) {
 	return c.file.Tokens[idx], true
 }
 
+// IndexExpr is X[arg0, arg1, …]. Lbrack and Rbrack are token indexes.
+type IndexExpr struct {
+	nodeBase
+	X      Node
+	Lbrack int
+	Args   []Node
+	Rbrack int
+	commas []int
+	file   *ObjectFile
+}
+
+func (x *IndexExpr) Children() []Node {
+	out := make([]Node, 0, 1+len(x.Args))
+	if x.X != nil {
+		out = append(out, x.X)
+	}
+	out = append(out, x.Args...)
+	return out
+}
+
+// CommaTok returns the comma token between Args[afterArg] and Args[afterArg+1].
+func (x *IndexExpr) CommaTok(afterArg int) (Token, bool) {
+	if x == nil || x.file == nil || afterArg < 0 || afterArg >= len(x.commas) {
+		return Token{}, false
+	}
+	idx := x.commas[afterArg]
+	if idx < 0 || idx >= len(x.file.Tokens) {
+		return Token{}, false
+	}
+	return x.file.Tokens[idx], true
+}
+
+// OptionAccessExpr is X::Sel. ColonColon is the index of the '::' token.
+type OptionAccessExpr struct {
+	nodeBase
+	X          Node
+	ColonColon int
+	Sel        Node
+}
+
+func (o *OptionAccessExpr) Children() []Node {
+	var out []Node
+	if o.X != nil {
+		out = append(out, o.X)
+	}
+	if o.Sel != nil {
+		out = append(out, o.Sel)
+	}
+	return out
+}
+
 // BinaryExpr is a binary operator with left and right operands.
 // Op is the index of the operator token.
 type BinaryExpr struct {
@@ -437,6 +494,8 @@ var (
 	_ Node = (*Block)(nil)
 	_ Node = (*CodeSection)(nil)
 	_ Node = (*CallExpr)(nil)
+	_ Node = (*IndexExpr)(nil)
+	_ Node = (*OptionAccessExpr)(nil)
 	_ Node = (*BinaryExpr)(nil)
 	_ Node = (*UnaryExpr)(nil)
 	_ Node = (*AssignStmt)(nil)

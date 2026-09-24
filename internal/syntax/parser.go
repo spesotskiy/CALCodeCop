@@ -375,7 +375,7 @@ func (p *parser) parseUnary() Node {
 	case strings.EqualFold(tok.Text, "NOT") && (tok.Kind == TokKeyword || tok.Kind == TokIdentifier):
 		opKind = UnaryNot
 	default:
-		return p.parsePrimary()
+		return p.parsePostfix()
 	}
 	op := p.advance()
 	operand := p.parseUnary()
@@ -384,6 +384,22 @@ func (p *parser) parseUnary() Node {
 	u.first = op.Index
 	u.last = lastTok(operand)
 	return u
+}
+
+func (p *parser) parsePostfix() Node {
+	left := p.parsePrimary()
+	for {
+		switch p.peek().Text {
+		case "(":
+			left = p.parseCall(left)
+		case "[":
+			left = p.parseIndex(left)
+		case "::":
+			left = p.parseOptionAccess(left)
+		default:
+			return left
+		}
+	}
 }
 
 func (p *parser) parsePrimary() Node {
@@ -426,9 +442,6 @@ func (p *parser) parsePrimary() Node {
 		id.kind = KindIdentifier
 		id.first = t.Index
 		id.last = t.Index
-		if p.peek().Text == "(" {
-			return p.parseCall(id)
-		}
 		return id
 	}
 	p.report("expected expression")
@@ -457,6 +470,36 @@ func (p *parser) parseCall(callee Node) *CallExpr {
 	close := p.expectSymbol(")")
 	call.last = close.Index
 	return call
+}
+
+func (p *parser) parseIndex(x Node) *IndexExpr {
+	lbrack := p.expectSymbol("[")
+	idx := &IndexExpr{X: x, Lbrack: lbrack.Index, file: p.file}
+	idx.kind = KindIndex
+	idx.first = firstTok(x)
+	if p.peek().Text != "]" && p.peek().Kind != TokEOF {
+		for {
+			idx.Args = append(idx.Args, p.parseExpr())
+			if p.peek().Text != "," {
+				break
+			}
+			idx.commas = append(idx.commas, p.advance().Index)
+		}
+	}
+	rbrack := p.expectSymbol("]")
+	idx.Rbrack = rbrack.Index
+	idx.last = rbrack.Index
+	return idx
+}
+
+func (p *parser) parseOptionAccess(x Node) *OptionAccessExpr {
+	cc := p.expectSymbol("::")
+	sel := p.parsePrimary()
+	oa := &OptionAccessExpr{X: x, ColonColon: cc.Index, Sel: sel}
+	oa.kind = KindOptionAccess
+	oa.first = firstTok(x)
+	oa.last = lastTok(sel)
+	return oa
 }
 
 func isBool(tok Token) bool {

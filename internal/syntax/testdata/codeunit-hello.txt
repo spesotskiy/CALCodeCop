@@ -1,0 +1,21 @@
+OBJECT Codeunit 50000 Hello
+{
+  OBJECT-PROPERTIES
+  {
+    Date=24.09.26;
+    Time=12:00:00;
+    Modified=Yes;
+    Version List=;
+  }
+  PROPERTIES
+  {
+    OnRun=BEGIN
+            MESSAGE('Hello!');
+          END;
+  }
+  CODE
+  {
+    BEGIN
+    END.
+  }
+}

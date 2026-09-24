@@ -302,6 +302,7 @@ func TestRule001BadSamples(t *testing.T) {
 			"Expected one space on each side of '*'.",
 			"Expected one space on each side of 'DIV'.",
 		}},
+		{"neq-tight.txt", 1, []string{"<>"}, []string{"Expected one space on each side of '<>'."}},
 		{"comma-no-space-after.txt", 1, []string{","}, []string{"Expected a single space after ','."}},
 		{"comma-both-sides.txt", 2, []string{",", ","}, []string{
 			"Unexpected space before ','.",
@@ -367,11 +368,48 @@ func TestRule001BadSamples(t *testing.T) {
 		})
 		total += tc.count
 	}
-	if len(cases) != 14 {
+	if len(cases) != 15 {
 		t.Fatalf("samples %d", len(cases))
 	}
-	if total != 18 {
-		t.Fatalf("total findings %d, want 18", total)
+	if total != 19 {
+		t.Fatalf("total findings %d, want 19", total)
+	}
+}
+
+func TestRule001OkSamples(t *testing.T) {
+	hello, err := os.ReadFile("testdata/codeunit-hello.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := []string{
+		"assign-spaces-ok.txt",
+		"binary-and-ok.txt",
+		"call-comma-ok.txt",
+		"unary-not.txt",
+		"comma-in-string.txt",
+	}
+	for _, name := range files {
+		t.Run(name, func(t *testing.T) {
+			path := "testdata/rule001/" + name
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.HasPrefix(data, hello[:bytes.Index(hello, []byte("MESSAGE"))]) {
+				t.Fatal("sample is not a copy of the codeunit")
+			}
+			if bytes.Contains(data, []byte("MESSAGE('Hello!');")) {
+				t.Fatal("sample still contains the hello call")
+			}
+			tree := syntax.Parse(string(data), "internal/syntax/"+path, syntax.ParseOptions{})
+			if len(tree.Diagnostics) != 0 {
+				t.Fatalf("diagnostics = %+v", tree.Diagnostics)
+			}
+			findings := rules.Run(tree, []rules.Rule{rules.NewRule001()})
+			if len(findings) != 0 {
+				t.Fatalf("findings = %d, want 0: %+v", len(findings), findings)
+			}
+		})
 	}
 }
 

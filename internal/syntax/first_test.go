@@ -269,7 +269,7 @@ func TestCodeunitHello(t *testing.T) {
 		t.Fatalf("unexpected nodes: %s", strings.Join(forbidden, ", "))
 	}
 
-	findings := rules.Run(tree, []rules.Rule{rules.NewRule001(), rules.NewRule002()})
+	findings := rules.Run(tree, []rules.Rule{rules.NewRule001(), rules.NewRule002(), rules.NewRule003()})
 	if len(findings) != 0 {
 		t.Fatalf("Rule findings = %d, want 0: %+v", len(findings), findings)
 	}
@@ -538,6 +538,175 @@ func TestUnaryParse(t *testing.T) {
 	}
 	if tree.Tokens[u.Op].Text != "-" {
 		t.Fatalf("op token %q", tree.Tokens[u.Op].Text)
+	}
+}
+
+func TestRule003BadSamples(t *testing.T) {
+	hello, err := os.ReadFile("testdata/codeunit-hello.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		file     string
+		count    int
+		spans    []string
+		messages []string
+	}{
+		{"index-space-before-bracket.txt", 1, []string{"["}, []string{"Unexpected space around '[' or ']'."}},
+		{"index-space-after-bracket.txt", 1, []string{"["}, []string{"Unexpected space around '[' or ']'."}},
+		{"index-space-before-rbracket.txt", 1, []string{"]"}, []string{"Unexpected space around '[' or ']'."}},
+		{"index-space-inside.txt", 2, []string{"[", "]"}, []string{
+			"Unexpected space around '[' or ']'.",
+			"Unexpected space around '[' or ']'.",
+		}},
+		{"index-multidim-space-around.txt", 2, []string{"[", "]"}, []string{
+			"Unexpected space around '[' or ']'.",
+			"Unexpected space around '[' or ']'.",
+		}},
+		{"option-space-before.txt", 1, []string{"::"}, []string{"Unexpected space around '::'."}},
+		{"option-space-after.txt", 1, []string{"::"}, []string{"Unexpected space around '::'."}},
+		{"option-spaces.txt", 2, []string{"::", "::"}, []string{
+			"Unexpected space around '::'.",
+			"Unexpected space around '::'.",
+		}},
+		{"option-quoted-space.txt", 1, []string{"::"}, []string{"Unexpected space around '::'."}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.file, func(t *testing.T) {
+			path := "testdata/rule003/" + tc.file
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.HasPrefix(data, hello[:bytes.Index(hello, []byte("MESSAGE"))]) {
+				t.Fatal("sample is not a copy of the codeunit")
+			}
+			if bytes.Contains(data, []byte("MESSAGE('Hello!');")) {
+				t.Fatal("sample still contains the hello call")
+			}
+			tree := syntax.Parse(string(data), "internal/syntax/"+path, syntax.ParseOptions{})
+			if len(tree.Diagnostics) != 0 {
+				t.Fatalf("diagnostics = %+v", tree.Diagnostics)
+			}
+			findings := rules.Run(tree, []rules.Rule{rules.NewRule003()})
+			if len(findings) != tc.count {
+				t.Fatalf("findings = %d, want %d: %+v", len(findings), tc.count, findings)
+			}
+			got := make([]string, len(findings))
+			gotMsg := make([]string, len(findings))
+			for i, f := range findings {
+				if f.RuleID != "003" {
+					t.Fatalf("rule id %q", f.RuleID)
+				}
+				if f.Severity != rules.SeverityError {
+					t.Fatalf("severity %d", f.Severity)
+				}
+				text := spanText(string(data), f.Span)
+				got[i] = text
+				gotMsg[i] = f.Message
+			}
+			if strings.Join(got, ",") != strings.Join(tc.spans, ",") {
+				t.Fatalf("spans %q, want %q", got, tc.spans)
+			}
+			if strings.Join(gotMsg, "\n") != strings.Join(tc.messages, "\n") {
+				t.Fatalf("messages %q, want %q", gotMsg, tc.messages)
+			}
+		})
+	}
+}
+
+func TestRule003OkSamples(t *testing.T) {
+	hello, err := os.ReadFile("testdata/codeunit-hello.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := []string{
+		"index-ok.txt",
+		"index-plus-ok.txt",
+		"index-multidim-ok.txt",
+		"option-ok.txt",
+		"option-quoted-ok.txt",
+	}
+	for _, name := range files {
+		t.Run(name, func(t *testing.T) {
+			path := "testdata/rule003/" + name
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.HasPrefix(data, hello[:bytes.Index(hello, []byte("MESSAGE"))]) {
+				t.Fatal("sample is not a copy of the codeunit")
+			}
+			if bytes.Contains(data, []byte("MESSAGE('Hello!');")) {
+				t.Fatal("sample still contains the hello call")
+			}
+			tree := syntax.Parse(string(data), "internal/syntax/"+path, syntax.ParseOptions{})
+			if len(tree.Diagnostics) != 0 {
+				t.Fatalf("diagnostics = %+v", tree.Diagnostics)
+			}
+			findings := rules.Run(tree, []rules.Rule{rules.NewRule003()})
+			if len(findings) != 0 {
+				t.Fatalf("findings = %d, want 0: %+v", len(findings), findings)
+			}
+		})
+	}
+}
+
+func TestIndexAndOptionParse(t *testing.T) {
+	data, err := os.ReadFile("testdata/rule003/index-multidim-ok.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree := syntax.Parse(string(data), "internal/syntax/testdata/rule003/index-multidim-ok.txt", syntax.ParseOptions{})
+	if len(tree.Diagnostics) != 0 {
+		t.Fatalf("diagnostics = %+v", tree.Diagnostics)
+	}
+	onRun := mustProp(t, tree.Objects[0].Properties, "OnRun")
+	cv := onRun.Value.(*syntax.CodeValue)
+	as := cv.Body.Statements[0].(*syntax.AssignStmt)
+	idx, ok := as.Right.(*syntax.IndexExpr)
+	if !ok {
+		t.Fatalf("right %T", as.Right)
+	}
+	recv, ok := idx.X.(*syntax.Identifier)
+	if !ok || recv.Text != "Arr" {
+		t.Fatalf("receiver %+v", idx.X)
+	}
+	if len(idx.Args) != 2 {
+		t.Fatalf("args %d", len(idx.Args))
+	}
+	if tree.Tokens[idx.Lbrack].Text != "[" || tree.Tokens[idx.Rbrack].Text != "]" {
+		t.Fatalf("brackets %q %q", tree.Tokens[idx.Lbrack].Text, tree.Tokens[idx.Rbrack].Text)
+	}
+	if _, ok := idx.CommaTok(0); !ok {
+		t.Fatal("missing comma token")
+	}
+
+	optData, err := os.ReadFile("testdata/rule003/option-quoted-ok.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	optTree := syntax.Parse(string(optData), "internal/syntax/testdata/rule003/option-quoted-ok.txt", syntax.ParseOptions{})
+	if len(optTree.Diagnostics) != 0 {
+		t.Fatalf("diagnostics = %+v", optTree.Diagnostics)
+	}
+	onRun = mustProp(t, optTree.Objects[0].Properties, "OnRun")
+	cv = onRun.Value.(*syntax.CodeValue)
+	as = cv.Body.Statements[0].(*syntax.AssignStmt)
+	oa, ok := as.Right.(*syntax.OptionAccessExpr)
+	if !ok {
+		t.Fatalf("right %T", as.Right)
+	}
+	left, ok := oa.X.(*syntax.Identifier)
+	if !ok || left.Text != `"Document Type"` {
+		t.Fatalf("left %+v", oa.X)
+	}
+	sel, ok := oa.Sel.(*syntax.Identifier)
+	if !ok || sel.Text != "Order" {
+		t.Fatalf("sel %+v", oa.Sel)
+	}
+	if optTree.Tokens[oa.ColonColon].Text != "::" {
+		t.Fatalf(":: token %q", optTree.Tokens[oa.ColonColon].Text)
 	}
 }
 

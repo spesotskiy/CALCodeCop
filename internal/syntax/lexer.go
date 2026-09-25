@@ -213,12 +213,14 @@ func (l *lexer) scanToken() Token {
 	start := l.markAt()
 	r := l.runes[l.pos]
 	switch r {
-	case '{', '}', '(', ')', ',', ';', '*', '/', '+', '.', '-':
+	case '{', '}', '(', ')', '[', ']', ',', ';', '*', '/', '+', '.', '-':
 		l.bump()
 		return l.make(TokSymbol, start)
 	case ':':
 		l.bump()
 		if !l.eof() && l.runes[l.pos] == '=' {
+			l.bump()
+		} else if !l.eof() && l.runes[l.pos] == ':' {
 			l.bump()
 		}
 		return l.make(TokSymbol, start)
@@ -239,6 +241,8 @@ func (l *lexer) scanToken() Token {
 		return l.make(TokSymbol, start)
 	case '\'':
 		return l.scanString(start)
+	case '"':
+		return l.scanQuotedIdent(start)
 	default:
 		if isIdentStart(r) {
 			return l.scanWord(start)
@@ -272,6 +276,28 @@ func (l *lexer) scanString(start mark) Token {
 		l.bump()
 	}
 	kind := TokString
+	if !closed {
+		kind = TokError
+	}
+	return l.make(kind, start)
+}
+
+func (l *lexer) scanQuotedIdent(start mark) Token {
+	l.bump() // opening "
+	closed := false
+	for !l.eof() {
+		r := l.runes[l.pos]
+		if r == '\n' || r == '\r' {
+			break
+		}
+		if r == '"' {
+			l.bump()
+			closed = true
+			break
+		}
+		l.bump()
+	}
+	kind := TokIdentifier
 	if !closed {
 		kind = TokError
 	}

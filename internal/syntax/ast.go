@@ -20,6 +20,7 @@ const (
 	KindCall
 	KindIdentifier
 	KindBinary
+	KindUnary
 	KindAssign
 	KindParen
 	KindExprStmt
@@ -58,6 +59,8 @@ func (k Kind) String() string {
 		return "Identifier"
 	case KindBinary:
 		return "Binary"
+	case KindUnary:
+		return "Unary"
 	case KindAssign:
 		return "Assign"
 	case KindParen:
@@ -335,6 +338,31 @@ type BinaryExpr struct {
 
 func (b *BinaryExpr) Children() []Node { return []Node{b.Left, b.Right} }
 
+// UnaryOp is which unary operator a UnaryExpr carries.
+type UnaryOp int
+
+const (
+	UnaryMinus UnaryOp = iota
+	UnaryPlus
+	UnaryNot
+)
+
+// UnaryExpr is a unary operator with one operand.
+// Op is the index of the operator token.
+type UnaryExpr struct {
+	nodeBase
+	OpKind UnaryOp
+	Op     int
+	X      Node
+}
+
+func (u *UnaryExpr) Children() []Node {
+	if u.X == nil {
+		return nil
+	}
+	return []Node{u.X}
+}
+
 // AssignStmt is an assignment. Assign is the index of the ':=' token.
 type AssignStmt struct {
 	nodeBase
@@ -410,6 +438,7 @@ var (
 	_ Node = (*CodeSection)(nil)
 	_ Node = (*CallExpr)(nil)
 	_ Node = (*BinaryExpr)(nil)
+	_ Node = (*UnaryExpr)(nil)
 	_ Node = (*AssignStmt)(nil)
 	_ Node = (*ParenExpr)(nil)
 	_ Node = (*ExprStmt)(nil)
